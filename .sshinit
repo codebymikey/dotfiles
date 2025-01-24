@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+#SSH_AGENT_METHOD=none
+SSH_AGENT_METHOD=${SSH_AGENT_METHOD:-keychain}
+
+if [ "$SSH_AGENT_METHOD" = 'keychain' ]; then
+  ###########################################################################
+  # allow $USER to use keys. Only enter once and it will remain enabled till
+  # you delete it or reboot the server
+  ###########################################################################
+  SSH_KEY_CHAIN_DEBUG=${SSH_KEY_CHAIN_DEBUG-false}
+  if [ "" ]
+  #set -x
+  if test -f "$HOME/.keychain/$HOSTNAME-sh"; then
+    source "$HOME/.keychain/$HOSTNAME-sh"
+  fi
+  if test -n "$SSH_AGENT_PID" && test -n "$SSH_AUTH_SOCK"; then
+    if ps -p "$SSH_AGENT_PID" > /dev/null || ! test -S "$SSH_AUTH_SOCK"; then
+      :
+      # Restarting the keychain service.
+      echo "Restarting keychain: $SSH_AGENT_PID ($SSH_AUTH_SOCK)"
+      # unset SSH_AGENT_PID; unset SSH_AUTH_SOCK;
+      /usr/bin/keychain --stop all
+      # rm -rf "$HOME/.keychain/$HOSTNAME-sh"
+    fi
+  fi
+  /usr/bin/keychain --quiet --quick "$HOME/.ssh/id_rsa" # --noask --clear
+  # shellcheck disable=SC1090
+  source "$HOME/.keychain/$HOSTNAME-sh"
+  extra_keys=(${SSH_KEY_CHAIN_EXTRA_KEYS-})
+  fingerprints=$(ssh-add -l)
+  for extra_key in "${extra_keys[@]}"; do
+    # https://stackoverflow.com/a/13034313
+    if [ -f "$extra_key" ] && ! echo -n "$fingerprints" | grep -q "$(ssh-keygen -lf "$extra_key")" >/dev/null; then
+      ssh-add "$extra_key"
+    fi
+  done
+  #set +x
+elif [ "$SSH_AGENT_METHOD" = 'wsl2-ssh-pageant' ]; then
+  # https://github.com/BlackReloaded/wsl2-ssh-pageant
+  export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
+  if ! ss -a | grep -q "$SSH_AUTH_SOCK"; then
+    rm -f "$SSH_AUTH_SOCK"
+    wsl2_ssh_pageant_bin="/usr/local/bin/wsl2-ssh-pageant.exe"
+    if [ -x "$wsl2_ssh_pageant_bin" ]; then
+      wsl2_ssh_pageant_verbose_arg=''
+      wsl2_ssh_pageant_verbose_arg=' -verbose'
+      (setsid nohup socat "UNIX-LISTEN:$SSH_AUTH_SOCK,fork" "EXEC:$wsl2_ssh_pageant_bin -logfile $HOME/wsl2-ssh-pageant.log${wsl2_ssh_pageant_verbose_arg}" >/dev/null 2>&1 &)
+      # ncat -U "$SSH_AUTH_SOCK" < /dev/null; echo $?
+      unset wsl2_ssh_pageant_verbose_arg
+    else
+      echo >&2 "$wsl2_ssh_pageant_bin is not executable."
+    fi
+    unset wsl2_ssh_pageant_bin
+  fi
+fi
+
+extra_keys=(${SSH_EXTRA_KEYS-})
+fingerprints=$(ssh-add -l)
+for extra_key in "${extra_keys[@]}"; do
+  # https://stackoverflow.com/a/13034313
+  if [ -f "$extra_key" ] && ! echo -n "$fingerprints" | grep -q "$(ssh-keygen -lf "$extra_key")" >/dev/null; then
+    ssh-add "$extra_key"
+  fi
+done

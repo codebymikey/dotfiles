@@ -1,0 +1,55 @@
+# Eternal bash history.
+# ---------------------
+# Undocumented feature which sets the size to "unlimited".
+# http://stackoverflow.com/questions/9457233/unlimited-bash-history
+# Increase Bash history size. Allow 32³ entries; the default is 500.
+# Can also set to "-1" for unlimited bash history.
+export HISTSIZE='32768';
+export HISTFILESIZE="${HISTSIZE}";
+
+export HISTTIMEFORMAT="[%F %T] "
+# Change the file location because certain bash sessions truncate .bash_history file upon close.
+# http://superuser.com/questions/575479/bash-history-truncated-to-500-lines-on-each-login
+export HISTFILE=~/.bash_eternal_history
+# Omit duplicates and commands that begin with a space from history to stop from filling up the history.
+export HISTCONTROL='ignoreboth';
+# Force prompt to write history immediately after every command instead of at logout.
+# Enables you to save history from multiple sessions at once.
+# http://superuser.com/questions/20900/bash-history-loss
+
+if [ -z "${PROMPT_COMMAND:-}" ] || [ -n "${PROMPT_COMMAND##*history -a*}" ]; then
+  if [ -z "${PROMPT_COMMAND:-}" ]; then
+    export PROMPT_COMMAND="history -a"
+  elif [[ "$PROMPT_COMMAND" == *\; ]]; then
+    export PROMPT_COMMAND="$PROMPT_COMMAND history -a"
+  else
+    export PROMPT_COMMAND="$PROMPT_COMMAND; history -a"
+  fi
+fi
+
+BEH_LOG_BEFORE_COMMAND=yes
+BEH_LOG_AFTER_COMMAND=yes
+
+preexec() {
+    if [ "$BEH_LOG_BEFORE_COMMAND" != "yes" ]; then return; fi
+    if [ -n "$MC_SID" ]; then return; fi # disable inside Midnight Commander
+    BEH_ENABLE_PRECMD="yes"
+    if [ "${BASH_VERSINFO[0]}" -gt 3 ]; then
+        { printf "$$ $USER %(%s)T - " -1 ; history 1 ; } >> ~/.bash_eternal_history
+    else
+        { echo -n "$$ $USER $(date +%s) - " ; history 1 ; } >> ~/.bash_eternal_history
+    fi
+}
+
+precmd() {
+    if [ "$BEH_LOG_AFTER_COMMAND" != "yes" ]; then return; fi
+    if [ -n "$MC_SID" ]; then return; fi # disable inside Midnight Commander
+    if [ -z "$BEH_ENABLE_PRECMD" ]; then return; fi
+
+    if [ "${BASH_VERSINFO[0]}" -gt 3 ]; then
+        { printf "$$ $USER - %(%s)T " -1 ; history 1 ; } >> ~/.bash_eternal_history
+    else
+        { echo -n "$$ $USER - $(date +%s) " ; history 1 ; } >> ~/.bash_eternal_history
+    fi
+    unset BEH_ENABLE_PRECMD
+}

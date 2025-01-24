@@ -1,3 +1,8 @@
+## Reload specifically with: bind -f ~/.inputrc
+
+# Include the default input options.
+$include /etc/inputrc
+
 # Make Tab autocomplete regardless of filename case
 set completion-ignore-case on
 

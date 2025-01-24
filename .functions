@@ -1,165 +1,397 @@
-#!/usr/bin/env bash
+#!/usr/bn/env bash
 
 # Create a new directory and enter it
 function mkd() {
-	mkdir -p "$@" && cd "$_";
+  mkdir -p "$@" && cd "$_"
 }
 
-# Change working directory to the top-most Finder window location
-function cdf() { # short for `cdfinder`
-	cd "$(osascript -e 'tell app "Finder" to POSIX path of (insertion location as alias)')";
+chmodf() {
+  local perm=${1?please specify the permission}
+  local dir=${2?please specify the directory}
+  find "$dir" -type f | xargs chmod "$perm"
+}
+chmodd() {
+  local perm=${1?please specify the permission}
+  local dir=${2?please specify the directory}
+  find "$dir" -type d | xargs chmod "$perm"
+}
+
+# Add paths to the current path.
+function add_path() {
+  local paths=("$@")
+  local append=0
+  local p
+  for p in "${paths[@]}"; do
+    if [ "$p" = --append ]; then
+      append=1
+      continue
+    fi
+    case ":${PATH}:" in
+    *":$p:"*) PATH="${PATH//:$p:/}" ;; # already there, remove all occurrences.
+    esac
+    if [ "$append" = 1 ]; then
+      PATH="${PATH:+${PATH}:}${p}"
+    else
+      PATH="${p}${PATH:+:${PATH}}"
+    fi
+  done
+}
+
+function reload() {
+  # if [ -f /etc/environment ]; then . /etc/environment; fi
+  # Reload the shell (i.e. invoke as a login shell)
+  exec "${SHELL}" -l
+}
+
+# Fix line ending issues
+function dos2unix_all() {
+  local directory="${1:-.}"
+  find "$directory" -type f -not -path '*/\.*' -print0 | xargs -0 dos2unix
+}
+
+tabs_to_spaces() {
+  local directory="${1:-.}"
+  echo find "directory" -type f -exec bash -c 'expand -t 4 "$0" > "$0~" && mv "$0~" "$0"' {} \;
+}
+
+# Find where a script exist.
+function whereis() {
+  local path="${1?please specificy the path}"
+  ls -al "$(which "$path")"
+}
+
+function getpids() {
+  local process="${1?-please specify a process name}"
+  \ps auxf | \grep "$process" | \grep -v grep | \awk '{print $2}'
+}
+
+function getpid() {
+  getpids "$@" | head -n1
+}
+
+function runas() {
+  local user,commands
+  user="${1?-please specify a process name}"
+  shift
+  commands="${1?-please specify a command}"
+  commands="${commands//\'/\'\\\'\'}"
+  runuser "$user" -s /bin/bash -c "'$commands'"
+}
+
+# Clone a Drupal project.
+function drupal_clone() {
+  local project_name
+  if [ "$#" -ge 1 ]; then
+    project_name="$1"
+    shift
+    git clone "https://git.drupalcode.org/project/${project_name}.git"
+    cd "${project_name}" || return 1
+    git_drupal
+  else
+    echo >&2 "Please provide a Drupal project name!"
+  fi
+}
+
+# Apply a patch from a local file.
+function patch_apply() {
+  local patch
+  local directory
+  if [ "$#" -ge 1 ]; then
+    patch="$1"
+    shift
+
+    if [ "$#" -ge 1 ] && [[ "$1" != -* ]]; then
+      directory="$1"
+      shift
+    else
+      directory=.
+    fi
+
+    # patch --unified --forward --reject-file=- --directory="${directory}" --strip=1 "$@" < "${patch}"
+    patch --unified --forward --directory="${directory}" --strip=1 "$@" <"${patch}"
+  else
+    echo "Could not apply the patch!"
+  fi
+}
+
+patch_apply_url() {
+  curl "$1" | git apply -v
+}
+
+# cat /tmp/file | chomp
+# Remove EOL from file.
+chomp() {
+  local temp_file
+  [ -f "$1" ] || {
+    echo "'$1' doesn't exist."
+    exit 1
+  }
+  temp_file=$(mktemp) &&
+    perl -p -e 'chomp if eof' "$1" >"$temp_file" &&
+    cat "$temp_file" >"$1" &&
+    rm -rf "$temp_file"
+}
+
+# Retrieves a chunk of a file, e.g. parts of a large sql dump or log file.
+chunk() {
+  local file="${1?Please specify a file}"
+  local start="${2?Please specify the starting line}"
+  local lines="${3?Please specify how many lines to show}"
+  if ! [[ -f "$file" ]]; then
+    >&2 echo "error: Please specify a valid file: '$file'"; exit 1
+  fi
+  if ! [[ $start =~ '^[0-9]+$' ]] ; then
+    >&2 echo "error: Please specify a valid start number: '$start'"; exit 1
+  fi
+  if ! [[ $lines =~ '^[0-9]+$' ]] ; then
+    >&2 echo "error: Please specify a valid line: '$lines'"; exit 1
+  fi
+  if gzip -t "$file" &>/dev/null; then
+    gzip -cd "$file" | head -n "$start" | tail -n "$lines"
+  else
+    head "$file" -n "$start" | tail -n "$lines"
+  fi
+}
+
+humanfriendly_size() {
+  local size="${1?Please specify a file size in bytes}"
+  if command -v numfmt &> /dev/null; then
+    numfmt --to=iec-i --suffix=B --format="%.2f" "$size"
+  elif [ "$size" -ge 1048576 ]; then
+    awk 'BEGIN {printf "%.2fMiB\n",'$size'/1048576}'
+  elif [ $size -ge 1024 ]; then
+    awk 'BEGIN {printf "%.2fKiB\n",'$size'/1024}'
+  else
+    printf "%.2fB\n" "$size"
+  fi
+}
+
+# Compare original and gzipped file size
+gz() {
+  local file="${1?Please specify a file}"
+  local origsize gzipsize ratio
+  local flags=''
+  if [ $# -gt 1 ] && [[ "$2" == -* ]]; then
+    # pass these as flags into gzip.
+    flags="$2"
+  elif [[ "$file" == *.gz ]]; then
+    # decompress if it's a gzip file.
+    flags='-d '
+  fi
+  origsize=$(wc -c <"$file")
+  gzipsize=$(gzip $flags-c "$file" | wc -c)
+
+  ratio=$(echo "$gzipsize * 100 / $origsize" | bc -l)
+
+  printf "original: %s\n" "$(humanfriendly_size "$origsize")"
+  printf "gzipped: %s (%2.2f%%)\n" "$(humanfriendly_size "$gzipsize")" "$ratio"
 }
 
 # Create a .tar.gz archive, using `zopfli`, `pigz` or `gzip` for compression
 function targz() {
-	local tmpFile="${@%/}.tar";
-	tar -cvf "${tmpFile}" --exclude=".DS_Store" "${@}" || return 1;
+  local size zippedSize
+  local tmpFile="${1%/}.tar"
+  tar -cvf "${tmpFile}" --exclude=".DS_Store" "${@}" || return 1
 
-	size=$(
-		stat -f"%z" "${tmpFile}" 2> /dev/null; # macOS `stat`
-		stat -c"%s" "${tmpFile}" 2> /dev/null;  # GNU `stat`
-	);
+  size=$(
+    stat -f"%z" "${tmpFile}" 2>/dev/null # macOS `stat`
+    stat -c"%s" "${tmpFile}" 2>/dev/null # GNU `stat`
+  )
 
-	local cmd="";
-	if (( size < 52428800 )) && hash zopfli 2> /dev/null; then
-		# the .tar file is smaller than 50 MB and Zopfli is available; use it
-		cmd="zopfli";
-	else
-		if hash pigz 2> /dev/null; then
-			cmd="pigz";
-		else
-			cmd="gzip";
-		fi;
-	fi;
+  local cmd=""
+  if ((size < 52428800)) && hash zopfli 2>/dev/null; then
+    # the .tar file is smaller than 50 MB and Zopfli is available; use it
+    cmd="zopfli"
+  else
+    if hash pigz 2>/dev/null; then
+      cmd="pigz"
+    else
+      cmd="gzip"
+    fi
+  fi
 
-	echo "Compressing .tar ($((size / 1000)) kB) using \`${cmd}\`…";
-	"${cmd}" -v "${tmpFile}" || return 1;
-	[ -f "${tmpFile}" ] && rm "${tmpFile}";
+  echo "Compressing .tar ($((size / 1000)) kB) using \`${cmd}\`…"
+  "${cmd}" -v "${tmpFile}" || return 1
+  [ -f "${tmpFile}" ] && rm "${tmpFile}"
 
-	zippedSize=$(
-		stat -f"%z" "${tmpFile}.gz" 2> /dev/null; # macOS `stat`
-		stat -c"%s" "${tmpFile}.gz" 2> /dev/null; # GNU `stat`
-	);
+  zippedSize=$(
+    stat -f"%z" "${tmpFile}.gz" 2>/dev/null # macOS `stat`
+    stat -c"%s" "${tmpFile}.gz" 2>/dev/null # GNU `stat`
+  )
 
-	echo "${tmpFile}.gz ($((zippedSize / 1000)) kB) created successfully.";
+  echo "${tmpFile}.gz ($((zippedSize / 1000)) kB) created successfully."
+}
+
+fix_single_line_extended_inserts() {
+  sed -i -e 's|),(|),\n(|g' "${1?Please specify SQL dump file}"
+}
+
+git_fix_author() {
+  local wrong_email=${1?please specify the old email}
+  local new_name=${2?please specify the new author name}
+  local new_email=${3?please specify the new author email}
+  local env_filter
+  env_filter=$(
+    cat <<ENV_FILTER
+WRONG_EMAIL="${wrong_email}"
+NEW_NAME="${new_name}"
+NEW_EMAIL="${new_email}"
+
+if [ "$GIT_COMMITTER_EMAIL" = "\$WRONG_EMAIL" ]
+then
+    export GIT_COMMITTER_NAME="\$NEW_NAME"
+    export GIT_COMMITTER_EMAIL="\$NEW_EMAIL"
+fi
+if [ "$GIT_AUTHOR_EMAIL" = "\$WRONG_EMAIL" ]
+then
+    export GIT_AUTHOR_NAME="\$NEW_NAME"
+    export GIT_AUTHOR_EMAIL="\$NEW_EMAIL"
+fi
+ENV_FILTER
+  )
+  git filter-branch --env-filter "${env_filter}" --tag-name-filter cat -- --branches --tags
+}
+
+git_amend_latest() {
+  local GIT_COMMITTER_DATE
+  GIT_COMMITTER_DATE=$(git log -1 --format="%ai")
+  export GIT_COMMITTER_DATE
+  git commit --amend --reset-author --no-edit "$@"
+}
+
+process_tree() {
+  local pid
+  pid=$(pgrep -f "$1")
+  pstree -aps "$pid"
+}
+
+curl_time() {
+  curl -so /dev/null -w "\
+   namelookup:  %{time_namelookup}s\n\
+      connect:  %{time_connect}s\n\
+   appconnect:  %{time_appconnect}s\n\
+  pretransfer:  %{time_pretransfer}s\n\
+     redirect:  %{time_redirect}s\n\
+starttransfer:  %{time_starttransfer}s\n\
+-------------------------\n\
+        total:  %{time_total}s\n" "$@"
+}
+
+# Change working directory to the top-most Finder window location
+function cdf() { # short for `cdfinder`
+  cd "$(osascript -e 'tell app "Finder" to POSIX path of (insertion location as alias)')"
 }
 
 # Determine size of a file or total size of a directory
 function fs() {
-	if du -b /dev/null > /dev/null 2>&1; then
-		local arg=-sbh;
-	else
-		local arg=-sh;
-	fi
-	if [[ -n "$@" ]]; then
-		du $arg -- "$@";
-	else
-		du $arg .[^.]* ./*;
-	fi;
+  if du -b /dev/null >/dev/null 2>&1; then
+    local arg=-sbh
+  else
+    local arg=-sh
+  fi
+  if [[ -n "$*" ]]; then
+    du $arg -- "$@"
+  else
+    du $arg .[^.]* ./*
+  fi
 }
 
 # Use Git’s colored diff when available
-hash git &>/dev/null;
-if [ $? -eq 0 ]; then
-	function diff() {
-		git diff --no-index --color-words "$@";
-	}
-fi;
+if hash git &>/dev/null; then
+  function diff() {
+    git diff --no-index --color-words "$@"
+  }
+fi
 
 # Create a data URL from a file
 function dataurl() {
-	local mimeType=$(file -b --mime-type "$1");
-	if [[ $mimeType == text/* ]]; then
-		mimeType="${mimeType};charset=utf-8";
-	fi
-	echo "data:${mimeType};base64,$(openssl base64 -in "$1" | tr -d '\n')";
+  local mimeType
+  mimeType=$(file -b --mime-type "$1")
+  if [[ $mimeType == text/* ]]; then
+    mimeType="${mimeType};charset=utf-8"
+  fi
+  echo "data:${mimeType};base64,$(openssl base64 -in "$1" | tr -d '\n')"
 }
 
 # Start an HTTP server from a directory, optionally specifying the port
 function server() {
-	local port="${1:-8000}";
-	sleep 1 && open "http://localhost:${port}/" &
-	# Set the default Content-Type to `text/plain` instead of `application/octet-stream`
-	# And serve everything as UTF-8 (although not technically correct, this doesn’t break anything for binary files)
-	python -c $'import SimpleHTTPServer;\nmap = SimpleHTTPServer.SimpleHTTPRequestHandler.extensions_map;\nmap[""] = "text/plain";\nfor key, value in map.items():\n\tmap[key] = value + ";charset=UTF-8";\nSimpleHTTPServer.test();' "$port";
+  local port="${1:-8000}"
+  sleep 1 && open "http://localhost:${port}/" &
+  # Set the default Content-Type to `text/plain` instead of `application/octet-stream`
+  # And serve everything as UTF-8 (although not technically correct, this doesn’t break anything for binary files)
+  python -c $'import SimpleHTTPServer;\nmap = SimpleHTTPServer.SimpleHTTPRequestHandler.extensions_map;\nmap[""] = "text/plain";\nfor key, value in map.items():\n\tmap[key] = value + ";charset=UTF-8";\nSimpleHTTPServer.test();' "$port"
 }
 
 # Start a PHP server from a directory, optionally specifying the port
 # (Requires PHP 5.4.0+.)
 function phpserver() {
-	local port="${1:-4000}";
-	local ip=$(ipconfig getifaddr en1);
-	sleep 1 && open "http://${ip}:${port}/" &
-	php -S "${ip}:${port}";
-}
-
-# Compare original and gzipped file size
-function gz() {
-	local origsize=$(wc -c < "$1");
-	local gzipsize=$(gzip -c "$1" | wc -c);
-	local ratio=$(echo "$gzipsize * 100 / $origsize" | bc -l);
-	printf "orig: %d bytes\n" "$origsize";
-	printf "gzip: %d bytes (%2.2f%%)\n" "$gzipsize" "$ratio";
+  local port="${1:-4000}"
+  local ip
+  ip=$(ipconfig getifaddr en1)
+  sleep 1 && open "http://${ip}:${port}/" &
+  php -S "${ip}:${port}"
 }
 
 # Run `dig` and display the most useful info
 function digga() {
-	dig +nocmd "$1" any +multiline +noall +answer;
+  dig +nocmd "$1" any +multiline +noall +answer
 }
 
 # Show all the names (CNs and SANs) listed in the SSL certificate
 # for a given domain
 function getcertnames() {
-	if [ -z "${1}" ]; then
-		echo "ERROR: No domain specified.";
-		return 1;
-	fi;
+  if [ -z "${1}" ]; then
+    echo "ERROR: No domain specified."
+    return 1
+  fi
 
-	local domain="${1}";
-	echo "Testing ${domain}…";
-	echo ""; # newline
+  local domain="${1}"
+  echo "Testing ${domain}…"
+  echo "" # newline
 
-	local tmp=$(echo -e "GET / HTTP/1.0\nEOT" \
-		| openssl s_client -connect "${domain}:443" -servername "${domain}" 2>&1);
+  local tmp
+  tmp=$(echo -e "GET / HTTP/1.0\nEOT" |
+    openssl s_client -connect "${domain}:443" -servername "${domain}" 2>&1)
 
-	if [[ "${tmp}" = *"-----BEGIN CERTIFICATE-----"* ]]; then
-		local certText=$(echo "${tmp}" \
-			| openssl x509 -text -certopt "no_aux, no_header, no_issuer, no_pubkey, \
-			no_serial, no_sigdump, no_signame, no_validity, no_version");
-		echo "Common Name:";
-		echo ""; # newline
-		echo "${certText}" | grep "Subject:" | sed -e "s/^.*CN=//" | sed -e "s/\/emailAddress=.*//";
-		echo ""; # newline
-		echo "Subject Alternative Name(s):";
-		echo ""; # newline
-		echo "${certText}" | grep -A 1 "Subject Alternative Name:" \
-			| sed -e "2s/DNS://g" -e "s/ //g" | tr "," "\n" | tail -n +2;
-		return 0;
-	else
-		echo "ERROR: Certificate not found.";
-		return 1;
-	fi;
+  if [[ "${tmp}" = *"-----BEGIN CERTIFICATE-----"* ]]; then
+    local certText
+    certText=$(echo "${tmp}" |
+      openssl x509 -text -certopt "no_aux, no_header, no_issuer, no_pubkey, \
+			no_serial, no_sigdump, no_signame, no_validity, no_version")
+    echo "Common Name:"
+    echo "" # newline
+    echo "${certText}" | grep "Subject:" | sed -e "s/^.*CN=//" | sed -e "s/\/emailAddress=.*//"
+    echo "" # newline
+    echo "Subject Alternative Name(s):"
+    echo "" # newline
+    echo "${certText}" | grep -A 1 "Subject Alternative Name:" |
+      sed -e "2s/DNS://g" -e "s/ //g" | tr "," "\n" | tail -n +2
+    return 0
+  else
+    echo "ERROR: Certificate not found."
+    return 1
+  fi
 }
 
 # Normalize `open` across Linux, macOS, and Windows.
 # This is needed to make the `o` function (see below) cross-platform.
-if [ ! $(uname -s) = 'Darwin' ]; then
-	if grep -q Microsoft /proc/version; then
-		# Ubuntu on Windows using the Linux subsystem
-		alias open='explorer.exe';
-	else
-		alias open='xdg-open';
-	fi
+if [ ! "$(uname -s)" = 'Darwin' ]; then
+  if grep -q Microsoft /proc/version; then
+    # Ubuntu on Windows using the Linux subsystem
+    alias open='explorer.exe'
+  else
+    alias open='xdg-open'
+  fi
 fi
 
 # `o` with no arguments opens the current directory, otherwise opens the given
 # location
 function o() {
-	if [ $# -eq 0 ]; then
-		open .;
-	else
-		open "$@";
-	fi;
+  if [ $# -eq 0 ]; then
+    open .
+  else
+    open "$@"
+  fi
 }
 
 # `tre` is a shorthand for `tree` with hidden files and color enabled, ignoring
@@ -167,5 +399,242 @@ function o() {
 # `less` with options to preserve color and line numbers, unless the output is
 # small enough for one screen.
 function tre() {
-	tree -aC -I '.git|node_modules|bower_components' --dirsfirst "$@" | less -FRNX;
+  tree -aC -I '.git|.svn|node_modules|bower_components' --dirsfirst "$@" | less -FRNX
+}
+
+# https://unix.stackexchange.com/questions/269077/tput-setaf-color-table-how-to-determine-color-codes
+function _color_mode2colors() {
+  local r g b
+  # foreground or background (only 3 or 4 are accepted)
+  local fb="$1"
+  [[ $fb != 3 ]] && fb=4
+  local samples=(0 63 127 191 255)
+  for r in "${samples[@]}"; do
+    for g in "${samples[@]}"; do
+      for b in "${samples[@]}"; do
+        printf '\e[0;%s8;2;%s;%s;%sm%03d;%03d;%03d ' "$fb" "$r" "$g" "$b" "$r" "$g" "$b"
+      done
+      printf '\e[m\n'
+    done
+    printf '\e[m'
+  done
+  printf '\e[mReset\n'
+}
+
+function color_table() {
+  #### For 16 Million colors use \e[0;38;2;R;G;Bm each RGB is {0..255}
+  printf '\e[mR\n' # reset the colors.
+  printf '\n\e[m%59s\n' "Some samples of colors for r;g;b. Each one may be 000..255"
+  printf '\e[m%59s\n' "for the ansi option: \e[0;38;2;r;g;bm or \e[0;48;2;r;g;bm :"
+
+  _color_mode2colors 3
+  _color_mode2colors 4
+}
+
+# https://linuxcommand.org/lc3_adv_tput.php
+function color_table2() {
+  local clbg clfg attr
+  local -A tput_attr_map=()
+  tput_attr_map[0]=sgr0  # Normal text (reset)
+  tput_attr_map[1]=bold  # Bold
+  tput_attr_map[2]=dim   # Dim
+  tput_attr_map[4]=smul  # Underline
+  tput_attr_map[5]=blink # Blink
+  tput_attr_map[7]=rev   # Reverse
+
+  local tput_bf tput_fg tput_attr
+  # Background
+  for clbg in {40..47} {100..107} 49; do
+    if [ "$clbg" = 49 ]; then
+      tput_bf="tput setab op"
+    elif [ "$clbg" -ge 40 ] && [ "$clbg" -le 49 ]; then
+      tput_bf="tput setab $(("$clbg" - 40))"
+    else
+      tput_bf="tput setab $(("$clbg" - 100 + 8))"
+    fi
+    # Foreground
+    for clfg in {30..37} {90..97} 39; do
+      if [ "$clfg" -ge 30 ] && [ "$clfg" -le 39 ]; then
+        tput_fg="tput setaf $(("$clfg" - 30))"
+      else
+        tput_fg="tput setaf $(("$clfg" - 90 + 8))"
+      fi
+      # Formatting
+      for attr in 0 1 2 4 5 7; do
+        tput_attr="tput ${tput_attr_map[$attr]}"
+        #Print the result
+        #printf "\e[${attr};${clbg};${clfg}m\\\e[${attr};${clbg};${clfg}m\e[0m "
+        printf "%s => $(eval "$tput_bf; $tput_fg; $tput_attr")%s$(tput sgr0)\n" "echo \"\$($tput_attr)\$($tput_bf)\$($tput_fg)hello\$(tput sgr0)\"" 'hello'
+      done
+      echo #Newline
+    done
+  done
+}
+
+function color_fromhex() {
+  local hex r g b
+  hex=${1#"#"} # #00fc7b
+  r=$(printf '0x%0.2s' "$hex")
+  g=$(printf '0x%0.2s' "${hex#??}")
+  b=$(printf '0x%0.2s' "${hex#????}")
+  printf '%03d' "$(((r < 75 ? 0 : (r - 35) / 40) * 6 * 6 + (\
+  g < 75 ? 0 : (g - 35) / 40) * 6 + (\
+  b < 75 ? 0 : (b - 35) / 40) + 16))"
+}
+
+function color_hex_demo() {
+  local c message tput_output
+  c=$(color_fromhex "$1")
+  tput_output=$(tput setaf "$c")
+  message="tput setaf $c"
+  echo -e "Example: ${tput_output}${message}$(tput sgr0)"
+  echo "Usage: ${tput_output@Q}"
+}
+
+function color_tohex() {
+  local dec bas mul gray a b c r
+  dec=$(($1 % 256)) ### input must be a number in range 0-255.
+  if [ "$dec" -lt "16" ]; then
+    bas=$((dec % 16))
+    mul=128
+    [ "$bas" -eq "7" ] && mul=192
+    [ "$bas" -eq "8" ] && bas=7
+    [ "$bas" -gt "8" ] && mul=255
+    a="$(((bas & 1) * mul))"
+    b="$((((bas & 2) >> 1) * mul))"
+    c="$((((bas & 4) >> 2) * mul))"
+    printf 'dec= %3s basic= #%02x%02x%02x\n' "$dec" "$a" "$b" "$c"
+  elif [ "$dec" -gt 15 ] && [ "$dec" -lt 232 ]; then
+    b=$(((dec - 16) % 6))
+    b=$((b == 0 ? 0 : b * 40 + 55))
+    g=$(((dec - 16) / 6 % 6))
+    g=$((g == 0 ? 0 : g * 40 + 55))
+    r=$(((dec - 16) / 36))
+    r=$((r == 0 ? 0 : r * 40 + 55))
+    printf 'dec= %3s color= #%02x%02x%02x\n' "$dec" "$r" "$g" "$b"
+  else
+    gray=$(((dec - 232) * 10 + 8))
+    printf 'dec= %3s  gray= #%02x%02x%02x\n' "$dec" "$gray" "$gray" "$gray"
+  fi
+}
+
+function is_wsl() {
+  test -f /proc/sys/fs/binfmt_misc/WSLInterop
+}
+
+function delete_zone_identifier_files() {
+  find "${1:-.}" -name '*:Zone.Identifier' -delete
+}
+
+function wsl_ip() {
+  \ip addr show eth0 | \grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+}
+
+function wsl_mount_c() {
+  if ! ls /mnt/c >/dev/null; then
+    echo "Manually remounting the C drive..."
+    sudo umount /mnt/c
+    sudo mount -t drvfs C: /mnt/c
+  fi
+}
+
+# Mount
+wsl_mount_distro() {
+  # https://stackoverflow.com/a/68247130
+  # https://superuser.com/a/1659355/1768615
+  local mount_dir="/mnt/wsl/instances/${WSL_DISTRO_NAME}"
+  if [[ -n "${WSL_DISTRO_NAME}" ]]; then
+    if [[ -d "${mount_dir}" ]]; then
+      ls "${mount_dir}"
+    else
+      mkdir "${mount_dir}"
+      # note the terminating / on the directory name below!
+      wsl.exe -d "${WSL_DISTRO_NAME}" -u root mount --bind / "${mount_dir}/"
+    fi
+  fi
+}
+
+function wsl_path() {
+  path=$1
+  if [ -e "$path" ]; then
+    path=$(realpath "$path")
+    path="\\\\wsl$\\${WSL_DISTRO_NAME}${path//\//\\}"
+    echo "$path"
+  fi
+}
+
+# e.g print_variable HIST to list all variables starting with "HIST".
+function print_variable() {
+  local variable_prefix="$1"
+  local var
+  # printenv | grep "^${variable_prefix}.*="
+  for var in $(compgen -A variable | grep "^${variable_prefix}"); do
+    printf '%s=%s\n' "$var" "${!var}"
+  done
+}
+
+function xdebug_cli_on() {
+  sudo phpenmod -s cli xdebug
+  local PHP_IDE_CONFIG XDEBUG_CONFIG COMPOSER_ALLOW_XDEBUG XDEBUG_MODE
+  export PHP_IDE_CONFIG='serverName=appserver'
+  export XDEBUG_CONFIG='idekey=PHPSTORM'
+  export COMPOSER_ALLOW_XDEBUG=1
+  # xdebug 3
+  export XDEBUG_MODE=debug
+}
+
+function xdebug_cli_off() {
+  sudo phpdismod -s cli xdebug
+  unset PHP_IDE_CONFIG
+  unset XDEBUG_CONFIG
+  unset COMPOSER_ALLOW_XDEBUG
+  # xdebug 3
+  unset XDEBUG_MODE
+}
+
+function slack_webhook_test() {
+  curl -X POST -H 'Content-type: application/json' --data '{"text":"Hello, World!"}' "$1"
+}
+
+# Install the fiddler certificate so that it's trusted.
+function fiddler_install() {
+  local certfile="$1"
+  # Install a cert from the real file.
+  sudo openssl x509 -inform DER -in "$certfile" -out /etc/ssl/certs/FiddlerRoot.pem -outform PEM &&
+
+    # Rebuild certificates.
+    # sudo dpkg-reconfigure ca-certificates
+    sudo update-ca-certificates
+}
+
+# Enable fiddler.
+function fiddler_on() {
+  # https://superuser.com/a/1620974
+  local hostip=
+  hostip=$(grep nameserver /etc/resolv.conf | awk '{ print $2 }')
+  if [ -n "$hostip" ]; then
+    eval export {http_proxy,https_proxy,ftp_proxy,HTTP_PROXY,HTTPS_PROXY,FTP_PROXY}="http://${hostip}:8888"
+  else
+    echo >&2 "Could not find a valid host IP."
+  fi
+}
+
+# Disable fiddler.
+function fiddler_off() {
+  unset {http_proxy,https_proxy,ftp_proxy,HTTP_PROXY,HTTPS_PROXY,FTP_PROXY}
+}
+
+function p() {
+  local phpstorm_dir=
+  phpstorm_dir=$(\ls -dt /opt/PhpStorm-* | tail -1)
+  if [ -z "${phpstorm_dir}" ]; then
+    echo >&2 "Could not find a valid PHPStorm directory."
+    return 127
+  fi
+  if ! [ -x "${phpstorm_dir}/bin/phpstorm.sh" ]; then
+    echo >&2 "Could not find a valid PHPStorm executable."
+    return 127
+  fi
+  sudo pkill phpstorm.sh --signal SIGKILL;
+  nohup "${phpstorm_dir}/bin/phpstorm.sh" &> /dev/null &
 }

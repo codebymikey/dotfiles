@@ -1,6 +1,13 @@
 # Compiled Python files
 *.pyc
 
+# IDE files.
+/.idea
+
+# Dotfiles specific files.
+/.dotfiles-bak
+/.path
+
 # Folder view configuration files
 .DS_Store
 Desktop.ini
@@ -8,6 +15,9 @@ Desktop.ini
 # Thumbnail cache files
 ._*
 Thumbs.db
+
+# Ignore WSL zone identifier files.
+*:Zone.Identifier
 
 # Files that might appear on external disks
 .Spotlight-V100

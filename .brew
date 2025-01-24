@@ -1,0 +1,11 @@
+if [ -d "${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}" ]; then
+  # Add the homebrew environment variables.
+  # /home/linuxbrew/.linuxbrew/bin/brew shellenv
+  export HOMEBREW_PREFIX="/home/linuxbrew/.linuxbrew";
+  export HOMEBREW_CELLAR="${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}/Cellar";
+  export HOMEBREW_REPOSITORY="${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}/Homebrew";
+  export PATH="${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}/bin:${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}/sbin${PATH+:$PATH}";
+  [ -z "${MANPATH-}" ] || export MANPATH=":${MANPATH#:}";
+  export INFOPATH="${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}/share/info:${INFOPATH:-}";
+  [ -z "${XDG_DATA_DIRS-}" ] || export XDG_DATA_DIRS="${HOMEBREW_PREFIX:-/home/linuxbrew/.linuxbrew}/share:${XDG_DATA_DIRS-}";
+fi

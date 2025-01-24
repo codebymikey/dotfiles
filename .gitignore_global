@@ -1,0 +1,27 @@
+# Dev files to ignore.
+*.ignore.
+ignore.dev
+*zmignore*
+*.zmignore*
+
+#dev
+dev_scratchpad
+#yarn.lock
+#dev.*
+#*.dev
+#*.dev.*
+
+#*.bak
+#.idea
+.history
+
+*:Zone.Identifier
+
+.phpstorm_helpers
+
+# Mac files
+.DS_Store
+__MACOSX
+
+node_modules
+yarn-error.log

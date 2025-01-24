@@ -35,6 +35,27 @@
 	# Amend the currently staged files to the latest commit.
 	amend = commit --amend --reuse-message=HEAD
 
+	# # https://codewithhugo.com/change-the-date-of-a-git-commit/
+	# Amend the latest commit's commit date.
+	amend-date = "!f() { export GIT_COMMITTER_DATE=\"$(date -d \"${1-$(date '+%Y-%m-%d %H:%M:%S')}\")\"; if [ $# -gt 0 ]; then shift; fi; LC_ALL=C git commit --amend --no-edit --date \"$GIT_COMMITTER_DATE\" $@; }; f"
+
+  amend-now = "!f() { export GIT_COMMITTER_DATE=\"$(date -R)\"; LC_ALL=C git commit --amend --no-edit --date \"$GIT_COMMITTER_DATE\" $@; }; f"
+
+	amend-same-date = "!f() { export GIT_COMMITTER_DATE=\"$(git log -1 --format='%ai')\"; LC_ALL=C git commit --amend --no-edit --date \"$GIT_COMMITTER_DATE\" $@; }; f"
+
+	# Reset the permissions of files back to their original
+	permission-reset = !git diff -p -R --no-ext-diff --no-color | grep -E \"^(diff|(old|new) mode)\" --color=never | git apply
+
+	permission-reset-cached = !git diff --cached -p -R --no-ext-diff --no-color | grep -E \"^(diff|(old|new) mode)\" --color=never | git apply
+
+  patch = !git --no-pager diff --no-color
+
+	# Incoming commits.
+	incoming = !sh -c 'git fetch && git log --graph --boundary --left-right --cherry-pick --decorate HEAD..FETCH_HEAD'
+
+	# Outgoing commits.
+	outgoing = !sh -c 'git fetch && git log --graph --boundary --left-right --cherry-pick --decorate FETCH_HEAD..HEAD'
+
 	# Credit an author on the latest commit.
 	credit = "!f() { git commit --amend --author \"$1 <$2>\" -C HEAD; }; f"
 
@@ -79,8 +100,9 @@
 [core]
 
 	# Use custom `.gitignore` and `.gitattributes`.
-	excludesfile = ~/.gitignore
+	excludesfile = ~/.gitignore_global
 	attributesfile = ~/.gitattributes
+	hooksPath = ~/.githooks
 
 	# Treat spaces before tabs and all kinds of trailing whitespace as an error.
 	# [default] trailing-space: looks for spaces at the end of a line
@@ -99,6 +121,8 @@
 	# https://git-scm.com/docs/git-update-index#_untracked_cache
 	untrackedCache = true
 
+	autocrlf = input
+
 [color]
 
 	# Use colors in Git commands that are capable of colored output when
@@ -110,6 +134,14 @@
 	current = yellow reverse
 	local = yellow
 	remote = green
+
+# https://github.com/so-fancy/diff-so-fancy
+[color "diff-highlight"]
+
+  oldNormal = red bold
+  oldHighlight = red bold 52
+  newNormal = green bold
+  newHighlight = green bold 22
 
 [color "diff"]
 
@@ -127,7 +159,7 @@
 [commit]
 
 	# https://help.github.com/articles/signing-commits-using-gpg/
-	gpgsign = true
+	gpgsign = false
 
 [diff]
 
@@ -138,6 +170,12 @@
 
 	# Use `hexdump` to diff binary files.
 	textconv = hexdump -v -C
+
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge --skip -- %f
+	process = git-lfs filter-process --skip
+	required = true
 
 [help]
 
@@ -181,3 +219,17 @@
 [init]
 
 	defaultBranch = main
+
+[user]
+	name = codebymikey
+	email = 9484406+codebymikey@users.noreply.github.com
+
+[cola]
+	spellcheck = false
+
+[include]
+	# Include custom overrides - https://git-scm.com/docs/git-config#_conditional_includes
+	path = ~/.gitconfig.local
+
+[includeIf "gitdir:workspaces"]
+	path = ~/.gitconfig-workspaces.local
