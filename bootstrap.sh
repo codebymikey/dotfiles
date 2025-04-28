@@ -22,7 +22,7 @@ function doItRsync() {
 
 function doItFiles() {
   local symlink="$1"
-  local backup="$2"
+  local backup="${2:-0}"
   local current_dir dotfiles_source
   local file relative_file_path target_file target_dir backup_dir
 
@@ -67,7 +67,7 @@ function doItFiles() {
 
 function doIt() {
   local symlink="$1"
-  local backup="$2"
+  local backup="${2:-0}"
   doItFiles "$symlink" "$backup"
   # shellcheck source=.bash_profile
   source ~/.bash_profile
@@ -195,12 +195,16 @@ function runMain() {
   if [ "$force" = 1 ]; then
     # Docker environment doesn't need to ask for confirmation.
     doIt "$symlink" "$backup"
-  else
+  elif tty -s; then
+    # Interactive input.
     read -r -p "This may overwrite existing files in your home directory. Are you sure? (y/N) " -n 1
     echo ""
     if [[ $REPLY =~ ^[Yy]$ ]]; then
       doIt "$symlink"
     fi
+  else
+    >&2 echo "Currently running in a non-interactive terminal, installing files..."
+    doIt "$symlink" "$backup"
   fi
 }
 

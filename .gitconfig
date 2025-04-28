@@ -43,6 +43,9 @@
 
 	amend-same-date = "!f() { export GIT_COMMITTER_DATE=\"$(git log -1 --format='%ai')\"; LC_ALL=C git commit --amend --no-edit --date \"$GIT_COMMITTER_DATE\" $@; }; f"
 
+  # Amend the current author.
+	amend-author = "!f() { git commit --amend --no-edit --reset-author; }; f"
+
 	# Reset the permissions of files back to their original
 	permission-reset = !git diff -p -R --no-ext-diff --no-color | grep -E \"^(diff|(old|new) mode)\" --color=never | git apply
 
@@ -85,7 +88,7 @@
 	contributors = shortlog --summary --numbered
 
 	# Show the user email for the current repository.
-	whoami = config user.email
+  whoami = config user.email
 
 [apply]
 

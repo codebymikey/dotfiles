@@ -1,0 +1,20 @@
+#!/usr/bin/bash
+
+lock_dir="/tmp/.runonce"
+lock_done="${lock_dir}/done"
+runonce_dir="$HOME/.runonce"
+
+if mkdir "${lock_dir}" 2>/dev/null; then { # Atomic lock
+	# The scripts should not modify the shell environment, hence subshell.
+	(
+		shopt -s nullglob
+		for script in "${runonce_dir}/"*; do {
+			# shellcheck source=/dev/null
+			source "${script}"
+		}; done
+	)
+	touch "${lock_done}" # Unlock
+}; else {
+	# Await for unlock
+	until test -e "${lock_done}"; do sleep 0.3; done
+}; fi

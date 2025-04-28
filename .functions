@@ -69,6 +69,59 @@ function getpid() {
   getpids "$@" | head -n1
 }
 
+function clean_kill() {
+    local target="$1"
+    local timeout="${2:-5}"
+
+    if [[ -z "$target" ]]; then
+        echo "Usage: clean_kill <pid|process_name> [timeout]"
+        return 1
+    fi
+
+    # Resolve process name to PID(s) if needed
+    if [[ "$target" =~ ^[0-9]+$ ]]; then
+        pids=("$target")
+    else
+        # Get PIDs by name, excluding this script itself
+        mapfile -t pids < <(pgrep -f "$target" | grep -v $$)
+        if [[ ${#pids[@]} -eq 0 ]]; then
+            echo "No process named '$target' found."
+            return 0
+        fi
+    fi
+
+    for pid in "${pids[@]}"; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Process $pid does not exist."
+            continue
+        fi
+
+        echo "Attempting to terminate process $pid..."
+        kill "$pid"
+
+        local end_time=$((SECONDS + timeout))
+
+        # Wait for graceful exit
+        while kill -0 "$pid" 2>/dev/null; do
+            if [[ $SECONDS -ge $end_time ]]; then
+                echo "Timeout reached. Forcing kill on process $pid."
+                kill -9 "$pid" 2>/dev/null
+                if kill -0 "$pid" 2>/dev/null; then
+                    echo "Failed to terminate process $pid."
+                    return 1
+                fi
+                echo "Process $pid was forcefully killed."
+                return 0
+            fi
+            sleep 0.2
+        done
+
+        echo "Process $pid terminated gracefully."
+    done
+
+    return 0
+}
+
 function runas() {
   local user,commands
   user="${1?-please specify a process name}"
@@ -76,6 +129,27 @@ function runas() {
   commands="${1?-please specify a command}"
   commands="${commands//\'/\'\\\'\'}"
   runuser "$user" -s /bin/bash -c "'$commands'"
+}
+
+function git_author() {
+  local username="${1?-please specify a name}"
+  local email="${1?-please specify an email}"
+  git config --unset author.email
+  git config --unset author.name
+  git config user.name "$username"
+  git config user.email "$email"
+}
+
+function git_drupal() {
+  local username="${GIT_DRUPAL_USER:-${GIT_USER?-Please specify a Drupal username}}"
+  local email="${GIT_DRUPAL_EMAIL?-Please specify a Drupal email}"
+  git_author "$username" "$email"
+}
+
+function git_github() {
+  local username="${GIT_GITHUB_USER:-${GIT_USER?-Please specify a Github username}}"
+  local email="${GIT_GITHUB_EMAIL?-Please specify a Github email}"
+  git_author "$username" "$email"
 }
 
 # Clone a Drupal project.
