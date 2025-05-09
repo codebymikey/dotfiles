@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env
 
 # Easier navigation: .., ..., ...., ....., ~ and -
 alias ..="cd .."
@@ -170,3 +170,9 @@ alias typeof='type'
 
 # https://github.com/DannyBen/completely
 alias completely='docker run --rm -it --user $(id -u):$(id -g) --volume "$PWD:/app" dannyben/completely'
+
+# https://github.com/wagoodman/dive
+alias dive="docker run -ti --rm  -v /var/run/docker.sock:/var/run/docker.sock docker.io/wagoodman/dive"
+
+# Run a bash sandbox in isolation to avoid messing up your current file system.
+alias bash_sandbox='docker run --rm -it bash'
