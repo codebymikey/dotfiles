@@ -162,16 +162,22 @@ alias ssh_temp="sudo /usr/sbin/sshd -d"
 #   sleep 10; alert
 alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
 
+# Copy to clip.
+alias xclip="xclip -selection c"
+
 # Add a simple way to signal a bell.
 command -v beep > /dev/null || alias beep="printf '\a'"
+
+# Use a version of "notify-send" that works from within WSL
+test -f /proc/sys/fs/binfmt_misc/WSLInterop && alias notify-send="notify-send-wsl.sh"
 
 # What the type of command or function it is.
 alias typeof='type'
 
-# https://github.com/DannyBen/completely
+# https://github.com/DannyBen/completely - bash autocomplete helper.
 alias completely='docker run --rm -it --user $(id -u):$(id -g) --volume "$PWD:/app" dannyben/completely'
 
-# https://github.com/wagoodman/dive
+# https://github.com/wagoodman/dive - inspect docker images.
 alias dive="docker run -ti --rm  -v /var/run/docker.sock:/var/run/docker.sock docker.io/wagoodman/dive"
 
 # Run a bash sandbox in isolation to avoid messing up your current file system.

@@ -141,14 +141,14 @@ function git_author() {
 }
 
 function git_drupal() {
-  local username="${GIT_DRUPAL_USER:-${GIT_USER?-Please specify a Drupal username}}"
-  local email="${GIT_DRUPAL_EMAIL?-Please specify a Drupal email}"
+  local username="${GIT_DRUPAL_USER:-${GIT_USER:-${GIT_COMMITTER_NAME?Please specify a Drupal username}}}"
+  local email="${GIT_DRUPAL_EMAIL:-${GIT_COMMITTER_EMAIL?Please specify a Drupal email}}"
   git_author "$username" "$email"
 }
 
 function git_github() {
-  local username="${GIT_GITHUB_USER:-${GIT_USER?-Please specify a Github username}}"
-  local email="${GIT_GITHUB_EMAIL?-Please specify a Github email}"
+  local username="${GIT_GITHUB_USER:-${GIT_USER:-${GIT_COMMITTER_NAME?Please specify a Github username}}}"
+  local email="${GIT_GITHUB_EMAIL:-${GIT_COMMITTER_EMAIL?Please specify a Github email}}"
   git_author "$username" "$email"
 }
 
@@ -164,6 +164,22 @@ function drupal_clone() {
   else
     echo >&2 "Please provide a Drupal project name!"
   fi
+}
+
+# Generate template module.
+function drupal_generate_placeholder() {
+  for module in "$@"; do
+    mkdir -p "web/modules/custom/_placeholders/$module"
+    cat <<YAML > "web/modules/custom/_placeholders/$module/$module.info.yml"
+name: $module (placeholder)
+type: module
+description: Placeholder $module module
+package: Custom
+core_version_requirement: '>=9'
+dependencies: []
+hidden: true
+YAML
+  done
 }
 
 # Apply a patch from a local file.
@@ -592,49 +608,9 @@ function color_tohex() {
   fi
 }
 
-function is_wsl() {
-  test -f /proc/sys/fs/binfmt_misc/WSLInterop
-}
-
-function delete_zone_identifier_files() {
-  find "${1:-.}" -name '*:Zone.Identifier' -delete
-}
-
-function wsl_ip() {
-  \ip addr show eth0 | \grep -oP '(?<=inet\s)\d+(\.\d+){3}'
-}
-
-function wsl_mount_c() {
-  if ! ls /mnt/c >/dev/null; then
-    echo "Manually remounting the C drive..."
-    sudo umount /mnt/c
-    sudo mount -t drvfs C: /mnt/c
-  fi
-}
-
-# Mount
-wsl_mount_distro() {
-  # https://stackoverflow.com/a/68247130
-  # https://superuser.com/a/1659355/1768615
-  local mount_dir="/mnt/wsl/instances/${WSL_DISTRO_NAME}"
-  if [[ -n "${WSL_DISTRO_NAME}" ]]; then
-    if [[ -d "${mount_dir}" ]]; then
-      ls "${mount_dir}"
-    else
-      mkdir "${mount_dir}"
-      # note the terminating / on the directory name below!
-      wsl.exe -d "${WSL_DISTRO_NAME}" -u root mount --bind / "${mount_dir}/"
-    fi
-  fi
-}
-
-function wsl_path() {
-  path=$1
-  if [ -e "$path" ]; then
-    path=$(realpath "$path")
-    path="\\\\wsl$\\${WSL_DISTRO_NAME}${path//\//\\}"
-    echo "$path"
-  fi
+# https://serverfault.com/a/596988
+function configure_passwordless_sudo() {
+    echo "$(\id -u -n) ALL=(ALL) NOPASSWD: ALL" | sudo tee -a "/etc/sudoers.d/$(\id -u -n)"
 }
 
 # e.g print_variable HIST to list all variables starting with "HIST".

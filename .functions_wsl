@@ -1,0 +1,44 @@
+function delete_zone_identifier_files() {
+  find "${1:-.}" -name '*:Zone.Identifier' -delete
+}
+
+function is_wsl() {
+  test -f /proc/sys/fs/binfmt_misc/WSLInterop
+}
+
+function wsl_ip() {
+  \ip addr show eth0 | \grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+}
+
+function wsl_mount_c() {
+  if ! ls /mnt/c >/dev/null; then
+    echo "Manually remounting the C drive..."
+    sudo umount /mnt/c
+    sudo mount -t drvfs C: /mnt/c
+  fi
+}
+
+# Mount
+wsl_mount_distro() {
+  # https://stackoverflow.com/a/68247130
+  # https://superuser.com/a/1659355
+  local mount_dir="/mnt/wsl/instances/${WSL_DISTRO_NAME}"
+  if [[ -n "${WSL_DISTRO_NAME}" ]]; then
+    if [[ -d "${mount_dir}" ]]; then
+      ls "${mount_dir}"
+    else
+      mkdir -p "${mount_dir}"
+      # note the terminating / on the directory name below!
+      wsl.exe -d "${WSL_DISTRO_NAME}" -u root mount --bind / "${mount_dir}/"
+    fi
+  fi
+}
+
+function wsl_path() {
+  path="${1:-.}"
+  if [ -e "$path" ]; then
+    path=$(realpath "$path")
+    path="\\\\wsl$\\${WSL_DISTRO_NAME}${path//\//\\}"
+    echo "$path"
+  fi
+}

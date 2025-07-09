@@ -1,7 +1,7 @@
 # Load the shell dotfiles, and then some:
 # * ~/.path can be used to extend `$PATH`.
 # * ~/.extra can be used for other settings you don’t want to commit.
-for file in ~/.{path,brew,bash_prompt,historyrc,bash_ssh,bash-powerline-ng,exports,aliases,functions,extra}; do
+for file in ~/.{path,brew,bash_prompt,historyrc,bash_ssh,bash-powerline-ng,exports,aliases,functions,functions_wsl,extra}; do
   [ -r "$file" ] && [ -f "$file" ] && source "$file"
   # Attempt to pick up local overrides.
   [ -r "$file.local" ] && [ -f "$file.local" ] && source "$file.local"

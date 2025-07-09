@@ -156,9 +156,9 @@ BASH_COMMANDS
 
 function runMain() {
   local positional_args=()
-  local force=0
-  local symlink=0
-  local backup=1
+  local force=${DOTFILE_FORCE:-0}
+  local symlink=${DOTFILE_SYMLINK:-0}
+  local backup=${DOTFILE_BACKUP:-1}
   while (("$#")); do
     case "$1" in
     --help | -h)
@@ -195,7 +195,7 @@ function runMain() {
   if [ "$force" = 1 ]; then
     # Docker environment doesn't need to ask for confirmation.
     doIt "$symlink" "$backup"
-  elif tty -s; then
+  elif tty -s &>/dev/null; then
     # Interactive input.
     read -r -p "This may overwrite existing files in your home directory. Are you sure? (y/N) " -n 1
     echo ""
