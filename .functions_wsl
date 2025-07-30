@@ -10,6 +10,11 @@ function wsl_ip() {
   \ip addr show eth0 | \grep -oP '(?<=inet\s)\d+(\.\d+){3}'
 }
 
+function wsl_host_ip() {
+  # https://pscheit.medium.com/get-the-ip-address-of-the-desktop-windows-host-in-wsl2-7dc61653ad51
+	ipconfig.exe | grep 'vEthernet (WSL' -A4 | cut -d":" -f 2 | tail -n1 | sed -e 's/\s*//g'
+}
+
 function wsl_mount_c() {
   if ! ls /mnt/c >/dev/null; then
     echo "Manually remounting the C drive..."

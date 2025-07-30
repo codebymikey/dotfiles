@@ -133,7 +133,7 @@ function runas() {
 
 function git_author() {
   local username="${1?-please specify a name}"
-  local email="${1?-please specify an email}"
+  local email="${2?-please specify an email}"
   git config --unset author.email
   git config --unset author.name
   git config user.name "$username"
@@ -347,6 +347,27 @@ git_amend_latest() {
   GIT_COMMITTER_DATE=$(git log -1 --format="%ai")
   export GIT_COMMITTER_DATE
   git commit --amend --reset-author --no-edit "$@"
+}
+
+# Usage: count_occurrence file.txt | sort -k3,3nr
+count_occurrence() {
+	awk '
+# Trim leading/trailing whitespace
+function trim(s) {
+    sub(/^[ \t\r\n]+/, "", s)
+    sub(/[ \t\r\n]+$/, "", s)
+    return s
+}
+
+{
+    item = trim($0)
+    if (item != "")
+        count[item]++
+}
+END {
+    for (item in count)
+        printf "%s %d\n", item, count[item]
+}' "$@"
 }
 
 process_tree() {
@@ -620,6 +641,23 @@ function print_variable() {
   # printenv | grep "^${variable_prefix}.*="
   for var in $(compgen -A variable | grep "^${variable_prefix}"); do
     printf '%s=%s\n' "$var" "${!var}"
+  done
+}
+
+function install_xdebug() {
+  local server_api=${1:-cli}
+  local php_versions=${2:-*}
+  local php_dir
+  local php_version
+  if [[ $php_versions != '*' ]] && ! [[ $php_versions =~ ^[0-9]+\.[0-9]+$ ]]; then
+    echo "error: '$php_versions' is not a valid PHP version" >&2; exit 1;
+  fi
+  for php_dir in /etc/php/$php_versions; do
+    php_version=${php_dir##*/}
+    printf "[xdebug]\n\
+xdebug.mode=debug,develop,trace\n\
+xdebug.start_with_request=yes\n" \
+      | sudo tee "/etc/php/$php_version/$server_api/conf.d/99-xdebug.ini" > /dev/null
   done
 }
 
