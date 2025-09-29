@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+# Initialize ssh
+# shellcheck disable=SC1090
+. ~/.sshinit

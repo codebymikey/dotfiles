@@ -1,25 +1,23 @@
 # Load the shell dotfiles, and then some:
 # * ~/.path can be used to extend `$PATH`.
 # * ~/.extra can be used for other settings you don’t want to commit.
-for file in ~/.{path,brew,bash_prompt,historyrc,bash_ssh,bash-powerline-ng,exports,aliases,functions,functions_wsl,extra}; do
-  [ -r "$file" ] && [ -f "$file" ] && source "$file"
+for file in ~/.{init,var,functions,functions_install,functions_wsl,path,brew,bash_prompt,historyrc,bash_ssh,bash-powerline-ng,exports,aliases,extra}; do
+  # Usage of "." over "source" here ensures that variables from a previous import are accessible by a later one.
+  [ -r "$file" ] && [ -f "$file" ] && . "$file"
   # Attempt to pick up local overrides.
-  [ -r "$file.local" ] && [ -f "$file.local" ] && source "$file.local"
+  [ -r "$file.local" ] && [ -f "$file.local" ] && . "$file.local"
 done
 unset file
 
-if [ -z "$ZSH" ] && [ -f "${BASH_SOURCE[0]%/*}/.bash_preexec.sh" ]; then
+if [ -z "${ZSH:-}" ] && [ -f "${BASH_SOURCE[0]%/*}/.bash_preexec.sh" ]; then
   # shellcheck source=.bash_preexec.sh
   source "${BASH_SOURCE[0]%/*}/.bash_preexec.sh"
+  # Load the preexec.local script.
+  # shellcheck disable=SC1090
+  [ -r ~/.preexec.local ] && [ -f ~/.preexec.local ] && . ~/.preexec.local
+  # echo "preexec_functions = ${preexec_functions[*]}"
+  # echo "precmd_functions = ${precmd_functions[*]}"
 fi
-
-# echo "precmd_functions = ${precmd_functions[*]}"
-
-# Add `~/bin` to the `$PATH`
-add_path "$HOME/bin"
-
-# Add user's private bin if it exists
-add_path "$HOME/.local/bin"
 
 # make less more friendly for non-text input files, see lesspipe(1)
 [ -x /usr/bin/lesspipe ] && eval "$(SHELL=/bin/sh lesspipe)"

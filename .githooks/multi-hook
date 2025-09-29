@@ -1,0 +1,140 @@
+#!/bin/bash
+
+# Allow multiple hooks.
+#
+# To use it copy this script with executable permission in ".git/hooks/hook-name"
+# where hook-name is the name of the hook (see man githooks to know available hooks).
+# Then place your scripts with executable permission in ".git/hooks/hook-name.d/".
+#
+# Adaption of https://github.com/majutsushi/etc/commit/e62904088c698e064c17522d54dff91b629ee253#diff-53b7e445a85984949f551c277d4cc4ee9682287cb234e075e6d352be887e7494
+# with https://github.com/pivotal-cf/git-hooks-core/blob/master/.base-hook
+#
+# This script is meant to be put into a directory pointed to by core.hooksPath
+# in Git 2.9.
+# Then for each hook you want to support, create a symlink "hookname -> multihook"
+# and optionally a directory "hookname.d" where you can put all scripts for
+# that hook
+#
+# This script linked to HOOKNAME in core.hooksPath executes,
+# in ascending order of priority:
+#
+# - ./HOOKNAME.d/*
+# - $GIT_CUSTOM_HOOKS_DIR/HOOKNAME.d/*
+# - $GIT_DIR/hooks/HOOKNAME.d/*
+# - $GIT_DIR/hooks/HOOKNAME
+#
+# The scripts found in those directories will be merged and
+# executed in alphabetic order, with hooks in higher-priority directories
+# overriding hooks in lower-priority directories.
+#
+# Source: https://gist.github.com/Konfekt/d9e86763b0f3febd7b2f7ca589f6c482
+# Source: https://gist.github.com/damienrg/411f63a5120206bb887929f4830ad0d0
+# https://pre-commit.com/
+
+set -eEu -o pipefail
+shopt -s inherit_errexit
+# optionally debug output by supplying TRACE=1
+[[ "${TRACE:-0}" == "1" ]] && set -o xtrace
+IFS=$'\n\t'
+PS4='+\t '
+
+error_handler() { echo >&2 "Error: In ${BASH_SOURCE[0]} Line ${1} exited with Status ${2}"; }
+trap 'error_handler ${LINENO} $?' ERR
+
+GIT_PREHOOK_DEBUG=${GIT_PREHOOK_DEBUG:-0}
+# The Git name of the hook to execute
+HOOKNAME=$(basename "${BASH_SOURCE[0]}")
+#HOOKNAME=${BASH_SOURCE##*/}
+
+case "$HOOKNAME" in
+  # Known supported hooks.
+  applypatch-msg|commit-msg|fsmonitor-watchman|post-checkout|post-commit|post-merge|post-update|pre-applypatch|pre-commit|prepare-commit-msg|pre-push|pre-rebase|pre-receive|update)
+    ;;
+  *)
+  echo >&2 "unknown hook type: $HOOKNAME"
+  exit 2
+  ;;
+esac
+
+[[ -n "${GIT_DIR:-}" ]] && git_dir="$GIT_DIR"
+unset "$(git rev-parse --local-env-vars || true)"
+GIT_DIR="$(git rev-parse --git-dir 2>/dev/null)" || GIT_DIR="$git_dir"
+export GIT_DIR
+[[ -n "${git_dir:-}" ]] && unset git_dir
+
+# Array of the supported hook directories in ascending order of priority
+declare -a HOOKDIRS
+HOOKDIRS+=("$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")
+[[ -n "${GIT_CUSTOM_HOOKS_DIR:-}" ]] && HOOKDIRS+=("$GIT_CUSTOM_HOOKS_DIR")
+HOOKDIRS+=("$GIT_DIR/hooks")
+
+STDIN=$(cat)
+HOOK_ARGS=("$@")
+
+_multihook_exit() {
+  local exit_code="${1:-0}"
+  if [[ "${GIT_PREHOOK_DEBUG}" = 1 ]]; then
+    echo >&2 "exiting with status code: $exit_code"
+  fi
+  exit "$exit_code"
+}
+
+run_git_hook() {
+  local hookscript="$1"
+  if [[ -f "$hookscript" && -x "$hookscript" ]]; then
+    if [[ "${GIT_PREHOOK_DEBUG}" = 1 ]]; then
+      echo >&2 "##### GITHOOK: ${hookscript}"
+    fi
+    {
+      echo "$STDIN" | "$hookscript" "${HOOK_ARGS[@]}" # 2>&1 #| tee /dev/tty
+    } || _multihook_exit $?
+  elif [[ "${GIT_PREHOOK_DEBUG}" = 1 ]]; then
+    echo >&2 "skipping non-executable hook: $hookscript"
+  fi
+}
+
+# run first hooks in $GIT_DIR as usual
+# similar to https://github.com/pivotal-cf/git-hooks-core/blob/master/.base-hook
+hookscript="${GIT_DIR}/hooks/${HOOKNAME}"
+run_git_hook "$hookscript"
+
+# Associative array of the hook scripts to run
+#   - Key is the basename of the file
+#   - Value is the full path to the file
+declare -A TO_RUN
+
+# Assemble the array of scripts to run. Since the keys are the basenames of
+# the scripts, scripts with the same name in higher-priority directories will
+# override scripts in lower-priority directories. This allows replacing or
+# disabling standard hooks without explicit support from the scripts.
+for dir in "${HOOKDIRS[@]}"; do
+  hookdir="${dir}/${HOOKNAME}.d"
+  if [[ -d "$hookdir" ]]; then
+    for hook in "$hookdir"/*; do
+      hookname="$(basename "$hook")"
+      TO_RUN[$hookname]="$hook"
+    done
+  fi
+done
+
+# Iterate over the script array in alphabetic order, running all the scripts
+# that have the executable bit set.
+# SORTED_KEYS=($(for key in "${!TO_RUN[@]}"; do echo "$key"; done | sort))
+mapfile -t SORTED_KEYS < <(printf '%s\n' "${!TO_RUN[@]}" | sort)
+
+if [[ "${GIT_PREHOOK_DEBUG}" = 1 ]]; then
+  printf >&2 "HOOKDIR: %s\n" "${HOOKDIRS[@]}"
+  printf >&2 "TO_RUN KEYS: %s\n" "${!TO_RUN[@]}"
+  printf >&2 "TO_RUN: %s\n" "${TO_RUN[@]}"
+  printf >&2 "SORTED_KEYS: %s\n" "${SORTED_KEYS[@]}"
+fi
+
+for hookname in "${SORTED_KEYS[@]}"; do
+  hookscript="${TO_RUN["$hookname"]}"
+  run_git_hook "$hookscript"
+done
+
+if [[ "${GIT_PREHOOK_FAIL:-0}" = 1 ]]; then
+  # Force a failure, useful for testing.
+  _multihook_exit 4
+fi

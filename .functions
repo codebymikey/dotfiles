@@ -1,5 +1,27 @@
 #!/usr/bn/env bash
 
+_dotfiles_sourced_source="${BASH_SOURCE[0]}"
+_dotfiles_symlinked=0
+while [ -h "${_dotfiles_sourced_source}" ]; do # Resolve $SOURCE until the file is no longer a symlink
+  _dotfiles_symlinked=1
+  _dotfiles_sourced_dir="$(cd -P "$(dirname "${_dotfiles_sourced_source}")" >/dev/null 2>&1 && pwd)"
+  _dotfiles_sourced_source="$(readlink "${_dotfiles_sourced_source}")"
+  [[ "${_dotfiles_sourced_source}" != /* ]] && _dotfiles_sourced_source="${_dotfiles_sourced_dir}/${_dotfiles_sourced_source}" # If $SOURCE was a relative symlink, resolve it relative to the path where the symlink file was located
+done
+_dotfiles_sourced_script_path="$(cd -P "$(dirname "${_dotfiles_sourced_source}")" >/dev/null 2>&1 && pwd)"
+
+# Attempt to update the dotfiles.
+dotfiles_update() {
+  if [ -x "${_dotfiles_sourced_script_path}/bootstrap.sh" ]; then
+    DOTFILE_SYMLINK="$_dotfiles_symlinked" bash "${_dotfiles_sourced_script_path}/bootstrap.sh" "$@"
+  fi
+}
+
+# Print each PATH entry on a separate line
+path() {
+  printf "%s\n" "${PATH//:/$'\n'}"
+}
+
 # Create a new directory and enter it
 function mkd() {
   mkdir -p "$@" && cd "$_"
@@ -20,15 +42,24 @@ chmodd() {
 function add_path() {
   local paths=("$@")
   local append=0
+  local must_exist=0
   local p
   for p in "${paths[@]}"; do
     if [ "$p" = --append ]; then
       append=1
       continue
     fi
+    if [ "$p" = --must-exist ]; then
+      must_exist=1
+      continue
+    fi
     case ":${PATH}:" in
     *":$p:"*) PATH="${PATH//:$p:/}" ;; # already there, remove all occurrences.
     esac
+    if [ "$must_exist" = 1 ] && ! [ -d "${p}" ]; then
+      # Doesn't exist, so skip.
+      continue;
+    fi
     if [ "$append" = 1 ]; then
       PATH="${PATH:+${PATH}:}${p}"
     else
@@ -38,7 +69,11 @@ function add_path() {
 }
 
 function reload() {
-  # if [ -f /etc/environment ]; then . /etc/environment; fi
+  # shellcheck disable=SC1091
+  if [ "${1:-}" = '--reset-env' ] && [ -f /etc/environment ]; then
+    # Attempt to reset the environment path.
+    . /etc/environment;
+  fi
   # Reload the shell (i.e. invoke as a login shell)
   exec "${SHELL}" -l
 }
@@ -67,6 +102,41 @@ function getpids() {
 
 function getpid() {
   getpids "$@" | head -n1
+}
+
+function check_ssh_agent() {
+  local timeout="${1:-}"
+  # https://stackoverflow.com/a/48509425
+  # Ignore the exit status since the ssh-add command might have failed.
+  ssh-add -l &>/dev/null
+  if [ "$?" == 2 ]; then
+    # Could not open a connection to your authentication agent.
+
+    # Load stored agent connection info.
+    if test -r ~/.ssh-agent; then
+      eval "$(<~/.ssh-agent)" >/dev/null
+    fi
+
+    ssh-add -l &>/dev/null
+    if [ "$?" == 2 ]; then
+      # Start agent and store agent connection info.
+      (
+        umask 066
+        ssh-agent >|~/.ssh-agent
+      )
+      eval "$(<~/.ssh-agent)" >/dev/null
+      # Don't leave extra agents around: kill it on exit. You may not want this part.
+      # trap "ssh-agent -k" exit
+    fi
+  fi
+
+  # Load identities
+  ssh-add -l &>/dev/null
+  if [ "$?" == 1 ]; then
+    # The agent has no identities.
+    # Time to add one if any.
+    ssh-add -t "$timeout" || true
+  fi
 }
 
 function clean_kill() {
@@ -140,15 +210,26 @@ function git_author() {
   git config user.email "$email"
 }
 
+_nonempty() {
+  if [ -z "$1" ]; then
+    echo "${2:-Please specify a value!}"
+    return 1
+  fi
+}
+
 function git_drupal() {
-  local username="${GIT_DRUPAL_USER:-${GIT_USER:-${GIT_COMMITTER_NAME?Please specify a Drupal username}}}"
-  local email="${GIT_DRUPAL_EMAIL:-${GIT_COMMITTER_EMAIL?Please specify a Drupal email}}"
+  local username="${GIT_DRUPAL_USER:-${GIT_USER:-${GIT_COMMITTER_NAME:-}}}"
+  _nonempty "$username" 'Please specify a Drupal username'
+  local email="${GIT_DRUPAL_EMAIL:-${GIT_COMMITTER_EMAIL:-}}"
+  _nonempty "$email" 'Please specify a Drupal email'
   git_author "$username" "$email"
 }
 
 function git_github() {
-  local username="${GIT_GITHUB_USER:-${GIT_USER:-${GIT_COMMITTER_NAME?Please specify a Github username}}}"
-  local email="${GIT_GITHUB_EMAIL:-${GIT_COMMITTER_EMAIL?Please specify a Github email}}"
+  local username="${GIT_GITHUB_USER:-${GIT_USER:-${GIT_COMMITTER_NAME:-}}}"
+  _nonempty "$username" 'Please specify a Github username'
+  local email="${GIT_GITHUB_EMAIL:-${GIT_COMMITTER_EMAIL:-}}"
+  _nonempty "$email" 'Please specify a Github email'
   git_author "$username" "$email"
 }
 
@@ -161,6 +242,11 @@ function drupal_clone() {
     git clone "https://git.drupalcode.org/project/${project_name}.git"
     cd "${project_name}" || return 1
     git_drupal
+    if [ "$#" -ge 2 ] && [[ "$2" == +([0-9]) ]]; then
+      local issue_number="$2"
+      git remote add "${project_name}-${issue_number}" "git@git.drupal.org:issue/${project_name}-${issue_number}.git"
+      git fetch "${project_name}-${issue_number}"
+    fi
   else
     echo >&2 "Please provide a Drupal project name!"
   fi

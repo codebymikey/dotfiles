@@ -3,10 +3,12 @@
 
 # IDE files.
 /.idea
+/.vscode
 
 # Dotfiles specific files.
 /.dotfiles-bak
-/.path
+/.*.local
+/.ssh-agent
 
 # Folder view configuration files
 .DS_Store

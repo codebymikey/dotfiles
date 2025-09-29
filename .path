@@ -1,0 +1,25 @@
+add_path "$HOME/.yarn/bin"
+add_path "$HOME/.config/composer/vendor/bin"
+
+if command -v go &> /dev/null; then
+  add_path --must-exist "$(go env GOPATH)/bin"
+fi
+
+# shellcheck disable=SC1091
+[[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm" # Load RVM into a shell session *as a function*
+
+export NVM_DIR="$HOME/.nvm"
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+
+# Add `~/bin` to the `$PATH`
+add_path "$HOME/bin"
+
+# Add user's private bin if it exists
+add_path "$HOME/.local/bin"
+
+# Add path-relative scripts.
+add_path "./vendor/bin"
+add_path "./node_modules/.bin"

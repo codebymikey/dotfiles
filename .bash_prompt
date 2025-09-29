@@ -5,7 +5,7 @@
 # Heavily inspired by @necolas’s prompt: https://github.com/necolas/dotfiles
 # iTerm → Profiles → Text → use 13pt Monaco with 1.1 vertical spacing.
 
-if [[ $COLORTERM = gnome-* && $TERM = xterm ]] && infocmp gnome-256color >/dev/null 2>&1; then
+if [[ ${COLORTERM:-} = gnome-* && $TERM = xterm ]] && infocmp gnome-256color >/dev/null 2>&1; then
   export TERM='gnome-256color'
 elif infocmp xterm-256color >/dev/null 2>&1; then
   export TERM='xterm-256color'
@@ -14,7 +14,8 @@ fi
 # uncomment for a colored prompt, if the terminal has the capability; turned
 # off by default to not distract the user: the focus in a terminal window
 # should be on the output of commands, not on the prompt
-force_color_prompt=yes
+force_color_prompt=${force_color_prompt:-no}
+color_prompt_fallback=${color_prompt_fallback:-yes}
 color_prompt=
 
 if tput setaf 1 &>/dev/null; then
@@ -39,7 +40,8 @@ if tput setaf 1 &>/dev/null; then
   violet=$(tput setaf 61)
   white=$(tput setaf 15)
   yellow=$(tput setaf 136)
-elif [ -n "$force_color_prompt" ]; then
+elif [ "$force_color_prompt" == yes ] || [[ "$color_prompt_fallback" = yes && -t 1 && "$TERM" =~ (xterm|screen|tmux|rxvt|linux|vt100) ]]; then
+  color_prompt=yes
   bold="\e[1m"
   reset="\e[0m"
   black="\e[1;30m"
@@ -56,6 +58,20 @@ elif [ -n "$force_color_prompt" ]; then
 
   # Extra
   blue22="[\e[38;5;31;1m\]"
+else
+  bold=""
+  reset=""
+  black=""
+  grey=""
+  blue=""
+  cyan=""
+  green=""
+  orange=""
+  purple=""
+  red=""
+  violet=""
+  white=""
+  yellow=""
 fi
 
 prompt_git() {
@@ -113,23 +129,24 @@ __prompt_exit_code() {
     # Non-zero exit status.
     printf "${red} [${grey}%s${red}]${reset}" "$EXIT"
   fi
+  #return "$EXIT"
 }
 
 # Highlight the user name when logged in as root.
-if [[ "${USER}" == "root" ]]; then
+if [ "$(id -u)" -eq 0 ]; then
   userStyle="${red}"
 else
   userStyle="${green}"
 fi
 
 # Highlight the hostname when connected via SSH.
-if [[ "${SSH_TTY}" ]]; then
+if [[ "${SSH_TTY:-}" ]]; then
   hostStyle="${bold}${red}"
 else
   hostStyle="${green}"
 fi
 
-if [ "$color_prompt" = yes ]; then
+__legacyPS1() {
   # Set the terminal title and prompt.
   PS1="\[\033]0;\W\007\]"   # working directory base name
   PS1+="\[${bold}\]\n"      # newline
@@ -138,21 +155,19 @@ if [ "$color_prompt" = yes ]; then
   PS1+="\[${hostStyle}\]\h" # host
   PS1+="\[${white}\] in "
   PS1+="\[${green}\]\w"                                                   # working directory full path
-  PS1+="\$(prompt_git \"\[${white}\] on \[${violet}\]\" \"\[${blue}\]\")" # Git repository details
+  if command prompt_git &> /dev/null; then
+    PS1+="\$(prompt_git \"\[${white}\] on \[${violet}\]\" \"\[${blue}\]\")" # Git repository details
+  fi
   PS1+="\n"
   PS1+="\[${white}\]\$ \[${reset}\]" # `$` (and reset color)
+}
 
-  PS2="\[${yellow}\]→ \[${reset}\]"
-else
-  # No colour.
-  PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
-fi
-
-# todo fix.
-if [ 1 = 1 ]; then
+if [ "$color_prompt" = yes ]; then
   # https://askubuntu.com/questions/27314/script-to-display-all-terminal-colors
   PROMPT_COMMAND=''
-  PROMPT_COMMAND+='PS1_CMD1=$(__git_ps1 " (%s)");'
+  if command __git_ps1 &> /dev/null; then
+    PROMPT_COMMAND+='PS1_CMD1=$(__git_ps1 " (%s)");'
+  fi
   PROMPT_COMMAND+="PS1_EXIT_CODE=\$(__prompt_exit_code);"
   PS1="${reset}"
   PS1+="[\[${blue}\]\@\[${reset}\]] " # time
@@ -165,13 +180,25 @@ if [ 1 = 1 ]; then
   PS1+="["
   PS1+="\[${blue}\]\w"
   PS1+="\[${reset}\]]"
-  PS1+="\$(prompt_git \"\[${white}\] on \[${violet}\]\" \"\[${blue}\]\")${reset}" # Git repository details
+  if command prompt_git &> /dev/null; then
+    PS1+="\$(prompt_git \"\[${white}\] on \[${violet}\]\" \"\[${blue}\]\")${reset}" # Git repository details
+  fi
   PS1+="\$PS1_EXIT_CODE"
   PS1+="${reset}\n"
   PS1+="\[${white}\]\$ \[${reset}\]" # `$` (and reset color)
   #PS1='[\[\e[32;1m\]\u\[\e[93m\]@\[\e[32m\]\h\[\e[0m\]][\[\e[38;5;117m\]\w\[\e[0m\]]\[\e[38;5;221;2m\]${PS1_CMD1}\[\e[0;91m\]\n\[\e[0m\]\$ '
   # PROMPT_COMMAND='PS1_CMD1=$(__git_ps1 " (%s)")'; PS1='[\[\e[38;5;31;1m\]\@\[\e[0m\]] [\[\e[32;1m\]\u\[\e[93m\]@\[\e[32m\]\h\[\e[0m\]][\[\e[38;5;117m\]\w\[\e[0m\]]\[\e[38;5;221;2m\]${PS1_CMD1}\n\[\e[0m\]\$ '
+  unset __legacyPS1
+
+  PS2="\[${yellow}\]→ \[${reset}\]"
+else
+  # No colour.
+  # shellcheck disable=SC2154
+  PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
 fi
-export PS1
+
+# Generally not a good idea to export the PS1 unless all the variables and functions will work across environments
+# (https://unix.stackexchange.com/a/132783)
+# export PS1
 # Secondary prompt screen (https://unix.stackexchange.com/a/193660).
 export PS2

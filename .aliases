@@ -48,6 +48,8 @@ alias egrep='egrep --color=auto'
 
 # Enable aliases to be sudo’ed
 alias sudo='sudo '
+# Please alias to repeat command but with sudo.
+alias please='sudo $(fc -ln -1)'
 
 # Get week number
 alias week='date +%V'
@@ -151,9 +153,6 @@ alias afk="/System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resource
 # Reload the shell (i.e. invoke as a login shell)
 # This is handled in .functions instead.
 # alias reload="PATH= exec ${SHELL} -l"
-
-# Print each PATH entry on a separate line
-alias path='echo -e ${PATH//:/\\n}'
 
 # Create an SSH session for testing SSH connection.
 alias ssh_temp="sudo /usr/sbin/sshd -d"

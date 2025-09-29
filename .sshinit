@@ -1,42 +1,41 @@
 #!/usr/bin/env bash
 
 #SSH_AGENT_METHOD=none
-SSH_AGENT_METHOD=${SSH_AGENT_METHOD:-keychain}
+SSH_AGENT_METHOD=${SSH_AGENT_METHOD:-none}
 
 if [ "$SSH_AGENT_METHOD" = 'keychain' ]; then
   ###########################################################################
   # allow $USER to use keys. Only enter once and it will remain enabled till
   # you delete it or reboot the server
   ###########################################################################
-  SSH_KEY_CHAIN_DEBUG=${SSH_KEY_CHAIN_DEBUG-false}
-  if [ "" ]
-  #set -x
+  SSH_KEYCHAIN_DEBUG=${SSH_KEYCHAIN_DEBUG-false}
+  if [ "${SSH_KEYCHAIN_DEBUG}" = true ]; then
+    set -x
+  fi
   if test -f "$HOME/.keychain/$HOSTNAME-sh"; then
+    # shellcheck disable=SC1090
     source "$HOME/.keychain/$HOSTNAME-sh"
   fi
   if test -n "$SSH_AGENT_PID" && test -n "$SSH_AUTH_SOCK"; then
-    if ps -p "$SSH_AGENT_PID" > /dev/null || ! test -S "$SSH_AUTH_SOCK"; then
+    if ! ps -p "$SSH_AGENT_PID" >/dev/null || ! test -S "$SSH_AUTH_SOCK"; then
       :
       # Restarting the keychain service.
       echo "Restarting keychain: $SSH_AGENT_PID ($SSH_AUTH_SOCK)"
       # unset SSH_AGENT_PID; unset SSH_AUTH_SOCK;
-      /usr/bin/keychain --stop all
+      keychain --stop all
       # rm -rf "$HOME/.keychain/$HOSTNAME-sh"
     fi
   fi
-  /usr/bin/keychain --quiet --quick "$HOME/.ssh/id_rsa" # --noask --clear
+  keychain --quiet --quick "$HOME/.ssh/id_rsa" # --noask --clear
   # shellcheck disable=SC1090
   source "$HOME/.keychain/$HOSTNAME-sh"
-  extra_keys=(${SSH_KEY_CHAIN_EXTRA_KEYS-})
-  fingerprints=$(ssh-add -l)
-  for extra_key in "${extra_keys[@]}"; do
-    # https://stackoverflow.com/a/13034313
-    if [ -f "$extra_key" ] && ! echo -n "$fingerprints" | grep -q "$(ssh-keygen -lf "$extra_key")" >/dev/null; then
-      ssh-add "$extra_key"
-    fi
-  done
-  #set +x
+  if [ "${SSH_KEYCHAIN_DEBUG}" = true ]; then
+    set +x
+  fi
 elif [ "$SSH_AGENT_METHOD" = 'wsl2-ssh-pageant' ]; then
+  #eval $(ssh-pageant.exe)
+  #SSH_AUTH_SOCK="${SSH_AUTH_SOCK/\/tmp//mnt/c/Users/$USER/AppData/Local/Temp}"
+  #export SSH_AUTH_SOCK
   # https://github.com/BlackReloaded/wsl2-ssh-pageant
   export SSH_AUTH_SOCK="$HOME/.ssh/agent.sock"
   if ! ss -a | grep -q "$SSH_AUTH_SOCK"; then
@@ -55,11 +54,16 @@ elif [ "$SSH_AGENT_METHOD" = 'wsl2-ssh-pageant' ]; then
   fi
 fi
 
-extra_keys=(${SSH_EXTRA_KEYS-})
-fingerprints=$(ssh-add -l)
-for extra_key in "${extra_keys[@]}"; do
-  # https://stackoverflow.com/a/13034313
-  if [ -f "$extra_key" ] && ! echo -n "$fingerprints" | grep -q "$(ssh-keygen -lf "$extra_key")" >/dev/null; then
-    ssh-add "$extra_key"
+IFS=':' read -ra SSH_EXTRA_KEYS_ARRAY <<<"$(echo -n "${SSH_EXTRA_KEYS-}" | tr '\n' ':')"
+if [ "${#SSH_EXTRA_KEYS_ARRAY[@]}" -gt 0 ]; then
+  if timeout 1 ssh-add -l > /dev/null; then
+    # Active ssh agent, attempt to add keys to it.
+    fingerprints=$(ssh-add -l)
+    for extra_key in "${SSH_EXTRA_KEYS_ARRAY[@]}"; do
+      # https://stackoverflow.com/a/13034313
+      if [ -f "$extra_key" ] && ! echo -n "$fingerprints" | grep -q "$(ssh-keygen -lf "$extra_key")" >/dev/null; then
+        ssh-add "$extra_key"
+      fi
+    done
   fi
-done
+fi

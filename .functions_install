@@ -1,0 +1,75 @@
+#!/usr/bn/env bash
+
+_install_binary() {
+  local name="$1"
+  local url="$2"
+  local dest="/usr/local/bin/$name"
+
+  echo "⬇️ Installing $name → $dest"
+  if curl -fsSL "$url" -o "/tmp/$name"; then
+    chmod +x "/tmp/$name"
+    if mv "/tmp/$name" "$dest" 2>/dev/null || sudo mv "/tmp/$name" "$dest"; then
+      echo "✅ $name installed at $dest"
+    else
+      echo "❌ Failed to move $name to $dest" >&2
+    fi
+  else
+    echo "❌ Failed to download $name from $url" >&2
+  fi
+}
+
+# Install known helper packages.
+install_pkgs() {
+  _get_architecture() {
+    case "$(uname -m)" in
+      x86_64|amd64) echo "amd64" ;;
+      aarch64|arm64) echo "arm64" ;;
+      *) echo "❌ Unsupported architecture: $(uname -m)" >&2; return 1 ;;
+    esac
+  }
+
+  local ARCH
+  if ! command -v yq &>/dev/null; then
+    ARCH="$(_get_architecture)" || return 1
+    _install_binary "yq" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}"
+  fi
+
+  if ! command -v jq &>/dev/null; then
+    ARCH="$(_get_architecture)"
+    local jq_arch
+    if [ "$ARCH" != '' ]; then
+      jq_arch="-$ARCH"
+    else
+      jq_arch='64'
+    fi
+    _install_binary "jq" "https://github.com/jqlang/jq/releases/latest/download/jq-linux${jq_arch}"
+  fi
+}
+
+_install_composer() {
+  local EXPECTED_CHECKSUM ACTUAL_CHECKSUM RESULT
+
+  EXPECTED_CHECKSUM="$(php -r 'copy("https://composer.github.io/installer.sig", "php://stdout");')"
+  php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+  ACTUAL_CHECKSUM="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+
+  if [ "$EXPECTED_CHECKSUM" != "$ACTUAL_CHECKSUM" ]; then
+    >&2 echo 'ERROR: Invalid installer checksum'
+    rm composer-setup.php
+    exit 1
+  fi
+
+  php composer-setup.php
+  RESULT=$?
+  rm composer-setup.php
+
+  mv composer.phar /usr/local/bin/composer 2>/dev/null || sudo mv composer.phar /usr/local/bin/composer
+  return $RESULT
+}
+
+_install_shellcheck() {
+  local scversion="${1:-stable}"
+  curl -sS --fail -L "https://github.com/koalaman/shellcheck/releases/download/${scversion?}/shellcheck-${scversion?}.linux.x86_64.tar.xz" \
+    | tar -xJv --strip-components=1 -C . "shellcheck-${scversion?}/shellcheck"
+  mv shellcheck /usr/local/bin/shellcheck 2>/dev/null || sudo mv shellcheck /usr/local/bin/shellcheck
+}

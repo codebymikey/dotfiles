@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Eternal bash history.
 # ---------------------
 # Undocumented feature which sets the size to "unlimited".
@@ -27,29 +28,41 @@ if [ -z "${PROMPT_COMMAND:-}" ] || [ -n "${PROMPT_COMMAND##*history -a*}" ]; the
   fi
 fi
 
-BEH_LOG_BEFORE_COMMAND=yes
-BEH_LOG_AFTER_COMMAND=yes
+BEH_LOG_BEFORE_COMMAND="${BEH_LOG_BEFORE_COMMAND:-yes}"
+BEH_LOG_AFTER_COMMAND="${BEH_LOG_AFTER_COMMAND:-no}"
 
 preexec() {
-    if [ "$BEH_LOG_BEFORE_COMMAND" != "yes" ]; then return; fi
-    if [ -n "$MC_SID" ]; then return; fi # disable inside Midnight Commander
+    if [ "${BEH_LOG_BEFORE_COMMAND}" != "yes" ]; then return; fi
+    if [ -n "${MC_SID:-}" ]; then return; fi # disable inside Midnight Commander
     BEH_ENABLE_PRECMD="yes"
     if [ "${BASH_VERSINFO[0]}" -gt 3 ]; then
-        { printf "$$ $USER %(%s)T - " -1 ; history 1 ; } >> ~/.bash_eternal_history
+        { printf "$$ $USER %(%s)T - " -1 ; history 1 ; } >> "${HISTFILE}"
     else
-        { echo -n "$$ $USER $(date +%s) - " ; history 1 ; } >> ~/.bash_eternal_history
+        { echo -n "$$ $USER $(date +%s) - " ; history 1 ; } >> "${HISTFILE}"
     fi
 }
 
 precmd() {
-    if [ "$BEH_LOG_AFTER_COMMAND" != "yes" ]; then return; fi
-    if [ -n "$MC_SID" ]; then return; fi # disable inside Midnight Commander
-    if [ -z "$BEH_ENABLE_PRECMD" ]; then return; fi
+    if [ "${BEH_LOG_AFTER_COMMAND}" != "yes" ]; then return; fi
+    if [ -n "${MC_SID:-}" ]; then return; fi # disable inside Midnight Commander
+    if [ -z "${BEH_ENABLE_PRECMD:-}" ]; then return; fi
 
     if [ "${BASH_VERSINFO[0]}" -gt 3 ]; then
-        { printf "$$ $USER - %(%s)T " -1 ; history 1 ; } >> ~/.bash_eternal_history
+        { printf "$$ $USER - %(%s)T " -1 ; history 1 ; } >> "${HISTFILE}"
     else
-        { echo -n "$$ $USER - $(date +%s) " ; history 1 ; } >> ~/.bash_eternal_history
+        { echo -n "$$ $USER - $(date +%s) " ; history 1 ; } >> "${HISTFILE}"
     fi
     unset BEH_ENABLE_PRECMD
+}
+
+hist() {
+    local num_lines=20  # default number of lines
+
+    # Check if an argument is provided and it's a valid number
+    if [[ $# -ge 1 && $1 =~ ^-?[0-9]+$ ]]; then
+        num_lines=$1
+    fi
+
+    # Display the specified number of lines from the history file
+    tail -n "$num_lines" "${HISTFILE}" | sed 's@^[[:space:]]*[0-9]*[[:space:]]*[a-z]*[[:space:]]*[0-9]*[[:space:]]*-[[:space:]]*[0-9]*[[:space:]]*\[[-0-9 :]*\]*[[:space:]]*@@'
 }
