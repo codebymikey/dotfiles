@@ -181,3 +181,10 @@ alias dive="docker run -ti --rm  -v /var/run/docker.sock:/var/run/docker.sock do
 
 # Run a bash sandbox in isolation to avoid messing up your current file system.
 alias bash_sandbox='docker run --rm -it bash'
+
+# Use git diff when available.
+if command -v git &>/dev/null; then
+  alias diff='git diff --no-index'
+else
+  alias diff='diff -u'
+fi
