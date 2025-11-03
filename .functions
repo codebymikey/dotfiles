@@ -217,6 +217,46 @@ _nonempty() {
   fi
 }
 
+ddev_debug_on() {
+  # ddev version
+  # ddev debug dockercheck
+  export DDEV_VERBOSE=true
+  export DDEV_DEBUG=true
+}
+
+ddev_debug_off() {
+  unset DDEV_VERBOSE DDEV_DEBUG
+}
+
+# Function to download and use a ddev PR
+ddev_pr_download() {
+  local url="${1?Please provide a URL}"
+  local suffix="${2?Please provide a suffix to apply to the ddev script}"
+  # Slugify the suffix.
+  suffix=$(echo "$suffix" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9_]+/-/g; s/^-+|-+$//g')
+  local tmp_zip
+  if ! [ -d "$HOME/bin" ]; then
+    # Make the bin directory.
+    echo "Please ensure the '$HOME/bin' directory exists, and is within your PATH variable."
+    return 1
+  fi
+  tmp_zip="$(mktemp)"
+  curl -L "$url" -o "$tmp_zip"
+  unzip -p "$tmp_zip" ddev >| "$HOME/bin/ddev-$suffix"
+  chmod +x "$HOME/bin/ddev-$suffix"
+  rm -rf "$tmp_zip"
+}
+
+function drush() {
+  local top_level_dir
+  top_level_dir=$(git rev-parse --show-toplevel)
+  if [ -d "$top_level_dir/.ddev" ]; then
+    ddev drush "$@"
+  else
+    lando drush "$@"
+  fi
+}
+
 function git_drupal() {
   local username="${GIT_DRUPAL_USER:-${GIT_USER:-${GIT_COMMITTER_NAME:-}}}"
   _nonempty "$username" 'Please specify a Drupal username'
@@ -238,11 +278,11 @@ function drupal_clone() {
   local project_name
   if [ "$#" -ge 1 ]; then
     project_name="$1"
-    shift
     git clone "https://git.drupalcode.org/project/${project_name}.git"
     cd "${project_name}" || return 1
     git_drupal
-    if [ "$#" -ge 2 ] && [[ "$2" == +([0-9]) ]]; then
+    if [[ "$#" -ge 2 ]] && [[ $2 =~ ^[0-9]+$ ]]; then
+      echo >&2 "Adding issue fork remote..."
       local issue_number="$2"
       git remote add "${project_name}-${issue_number}" "git@git.drupal.org:issue/${project_name}-${issue_number}.git"
       git fetch "${project_name}-${issue_number}"
@@ -291,7 +331,7 @@ function patch_apply() {
 }
 
 patch_apply_url() {
-  curl "$1" | git apply -v
+  \curl -Ls "$1" | git apply -v
 }
 
 # cat /tmp/file | chomp
@@ -316,10 +356,10 @@ chunk() {
   if ! [[ -f "$file" ]]; then
     >&2 echo "error: Please specify a valid file: '$file'"; exit 1
   fi
-  if ! [[ $start =~ '^[0-9]+$' ]] ; then
+  if ! [[ $start =~ ^[0-9]+$ ]] ; then
     >&2 echo "error: Please specify a valid start number: '$start'"; exit 1
   fi
-  if ! [[ $lines =~ '^[0-9]+$' ]] ; then
+  if ! [[ $lines =~ ^[0-9]+$ ]] ; then
     >&2 echo "error: Please specify a valid line: '$lines'"; exit 1
   fi
   if gzip -t "$file" &>/dev/null; then
@@ -402,6 +442,7 @@ fix_single_line_extended_inserts() {
   sed -i -e 's|),(|),\n(|g' "${1?Please specify SQL dump file}"
 }
 
+# https://stackoverflow.com/a/750182
 git_fix_author() {
   local wrong_email=${1?please specify the old email}
   local new_name=${2?please specify the new author name}
@@ -413,12 +454,12 @@ WRONG_EMAIL="${wrong_email}"
 NEW_NAME="${new_name}"
 NEW_EMAIL="${new_email}"
 
-if [ "$GIT_COMMITTER_EMAIL" = "\$WRONG_EMAIL" ]
+if [ "\$GIT_COMMITTER_EMAIL" = "\$WRONG_EMAIL" ]
 then
     export GIT_COMMITTER_NAME="\$NEW_NAME"
     export GIT_COMMITTER_EMAIL="\$NEW_EMAIL"
 fi
-if [ "$GIT_AUTHOR_EMAIL" = "\$WRONG_EMAIL" ]
+if [ "\$GIT_AUTHOR_EMAIL" = "\$WRONG_EMAIL" ]
 then
     export GIT_AUTHOR_NAME="\$NEW_NAME"
     export GIT_AUTHOR_EMAIL="\$NEW_EMAIL"
@@ -742,7 +783,6 @@ xdebug.start_with_request=yes\n" \
 
 function xdebug_cli_on() {
   sudo phpenmod -s cli xdebug
-  local PHP_IDE_CONFIG XDEBUG_CONFIG COMPOSER_ALLOW_XDEBUG XDEBUG_MODE
   export PHP_IDE_CONFIG='serverName=appserver'
   export XDEBUG_CONFIG='idekey=PHPSTORM'
   export COMPOSER_ALLOW_XDEBUG=1

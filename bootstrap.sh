@@ -118,9 +118,13 @@ function doIt() {
   local backup="${2:-0}"
   local dryrun="${3:-0}"
   doItFiles "$symlink" "$backup" "$dryrun"
-  if [ -f ~/.bash_profile ]; then
-    # shellcheck source=.bash_profile
-    source ~/.bash_profile
+  if [ "$dryrun" = 0 ]; then
+    # Ensure the .bashrc.d directory exists (for ddev support).
+    mkdir -p ~/.bashrc.d
+    if [ -f ~/.bash_profile ]; then
+      # shellcheck source=.bash_profile
+      source ~/.bash_profile
+    fi
   fi
 }
 
@@ -242,13 +246,13 @@ function runMain() {
         echo "Should typically be installed with $0 --symlink"
         echo ""
         echo "options:"
-        echo "    --update        Fetch the latest version from upstream."
-        echo "    --test          Test the dotfile inside a docker environment."
-        echo "    --backup        Backup the existing files if any."
-        echo "    --no-backup     Disable backup of the existing file if any."
-        echo "    --force         Force overwrite the existing files."
-        echo "    --symlink       Symlink the dotfiles so that changes made to this local repo are automatically picked up."
-        echo "    --dryrun        Do a dry run."
+        echo "    --update                   Fetch the latest version from upstream."
+        echo "    --test                     Test the dotfile inside a docker environment."
+        echo "    --backup                   Backup the existing files if any."
+        echo "    --no-backup                Disable backup of the existing file if any."
+        echo "    --force                    Force overwrite the existing files."
+        echo "    --symlink                  Symlink the dotfiles so that changes made to this local repo are automatically picked up."
+        echo "    --dryrun, --dry-run        Do a dry run."
       } >&2
       _exitCleanly; return $?;
       ;;
@@ -276,7 +280,7 @@ function runMain() {
     --symlink | -s)
       symlink=1
       ;;
-    --dryrun)
+    --dryrun | --dry-run)
       dryrun=1
       ;;
     esac

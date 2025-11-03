@@ -1,3 +1,17 @@
+if [[ "${BASH_PROFILE_DEBUG:-false}" = 'true' ]]; then
+  {
+    echo ".bash_profile"
+    =============
+    echo "args: $*"
+    echo "args (set): $-"
+    env
+    echo "----------"
+  } >> /tmp/.bash-debug-${UID-}.log
+fi
+if [[ "${BASH_PROFILE_IGNORE_NON_INTERACTIVE:-true}" = 'true' ]] && ! [[ $- == *i* ]]; then
+  # Don't include the rest of the code if it's a non-interactive profile.
+  return
+fi
 # Load the shell dotfiles, and then some:
 # * ~/.path can be used to extend `$PATH`.
 # * ~/.extra can be used for other settings you don’t want to commit.

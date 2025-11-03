@@ -73,3 +73,9 @@ _install_shellcheck() {
     | tar -xJv --strip-components=1 -C . "shellcheck-${scversion?}/shellcheck"
   mv shellcheck /usr/local/bin/shellcheck 2>/dev/null || sudo mv shellcheck /usr/local/bin/shellcheck
 }
+
+_install_utils() {
+  sudo apt install \
+    sysstat \
+    libbpf-tools # execsnoop
+}
